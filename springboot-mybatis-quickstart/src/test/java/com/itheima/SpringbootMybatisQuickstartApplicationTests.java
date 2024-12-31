@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 @SpringBootTest
@@ -52,6 +53,32 @@ class SpringbootMybatisQuickstartApplicationTests {
 
         empMapper.insert(emp);
         System.out.println(emp.getId());
+    }
+
+    @Test
+    public void testList2(){
+        List<Emp> empList = empMapper.list("张", (short) 1, LocalDate.of(2010, 1, 1), LocalDate.of(2020, 1, 1));
+    }
+
+    @Test
+    public void testUpdate2(){
+        Emp emp = new Emp();
+        emp.setId(18);
+        emp.setUsername("Tom111");
+        emp.setName("Tom111");
+        emp.setGender((short) 1);
+        emp.setImage(("1.jpg"));
+        emp.setJob((short)1);
+        emp.setEntrydate(LocalDate.of(2000,1,1));
+        emp.setUpdateTime(LocalDateTime.now());
+        emp.setDeptId(1);
+//        empMapper.update();
+    }
+
+    @Test
+    public void testDeleteByIds(){
+        List<Integer> ids = Arrays.asList(18, 19, 20);
+        empMapper.deletByIds(ids);
     }
 
 }

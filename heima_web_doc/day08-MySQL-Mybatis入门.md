@@ -768,14 +768,27 @@ public void insert(Emp emp);
 - SQL 语法： `select *  from emp where name like '%张%' and gender = 1 and entrydate between '2010-01-01' and '2020-01-01 ' order by update_time`
 - 接口方法
     ![Alt text](pictures/java_web入门第5天04.png)
+    - 这里不能用预编译的SQL，而是使用sql语句拼接（$）, 但是这样不安全，因此采用第二种方案：- 使用MySQL提供的字符串拼接函数：concat('%' , '关键字' , '%')
+按照条件查询，返回的可能是多条记录，所以用 List，泛型是 Emp
+
+```java
+@Select("select *  from emp where name like concat('%', #{name}, '%') and gender = #{gender} and entrydate between #{begin} and #{end} order by update_time")
+    public List<Emp> list(String name, Short gender, LocalDate begin, LocalDate end);
+```
+
+
 - 参数名说明
 ![Alt text](pictures/java_web入门第5天05.png)
 
-### XML 映射文件
+### XML 映射文件 （复杂sql语句建议使用xml）
 规范：
-- XML 映射文件的名称与 Mapper 接口名称一致，并且将 XML 映射文件和 Mapper 接口放置在相同包下（同包同名）。
-- XML 映射文件的 namespace 属性为 Mapper 接口全限定名一致。
-- XML 映射文件中 sql 语句的 id 与 Mapper  接口中的方法名一致，并保持返回类型一致。
+
+> [!NOTE]
+> - XML 映射文件的名称与 *Mapper 接口*名称一致，并且将 XML 映射文件和 Mapper 接口放置在相同包下（*同包同名*）。放到 resource 文件目录下
+> - XML 映射文件的 *namespace* 属性为 Mapper 接口全限定名一致。
+> - XML 映射文件中 sql 语句的 id 与 Mapper  接口中的*方法名*一致，并保持返回类型一致。
+> 	- 注意，resulttype指的是单条记录所对应的类
+
 - `<select id=“abc” resultType=“com.itheima.pojo.Emp”>` // 单条记录所封装的类型
 ![Alt text](pictures/java_web入门第5天06.png)
 - MybatisX 是一款基于 IDEA 的快速开发Mybatis的插件，为效率而生。
@@ -783,18 +796,187 @@ public void insert(Emp emp);
 - 官方说明：https://mybatis.net.cn/getting-started.html
 ## Mybatis 动态 SQL
 ### 动态 SQL
+在页面原型中，列表上方的条件是动态的，是可以不传递的，也可以只传递其中的1个或者2个或者全部。而在我们刚才编写的SQL语句中，我们会看到，我们将三个条件直接写死了。 如果页面只传递了参数姓名name 字段，其他两个字段 性别 和 入职时间没有传递，那么这两个参数的值就是null。
+![[Pasted image 20241231153911.png]]
+正确的做法应该是：传递了参数，再组装这个查询条件；如果没有传递参数，就不应该组装这个查询条件。
+
 随着用户的输入或外部条件的变化而变化的 SQL 语句，我们称为 动态 SQL。
-<div align=center><img src="pictures/java_web入门第5天07.png" height="260"></div>
+
+
+示例：把SQL语句改造为动态SQL方式
+
+- 原有的SQL语句
+
+~~~xml
+<select id="list" resultType="com.itheima.pojo.Emp">
+        select * from emp
+        where name like concat('%',#{name},'%')
+              and gender = #{gender}
+              and entrydate between #{begin} and #{end}
+        order by update_time desc
+</select>
+~~~
+
+- 动态SQL语句
+
+~~~xml
+<select id="list" resultType="com.itheima.pojo.Emp">
+        select * from emp
+        where
+    
+             <if test="name != null">
+                 name like concat('%',#{name},'%')
+             </if>
+             <if test="gender != null">
+                 and gender = #{gender}
+             </if>
+             <if test="begin != null and end != null">
+                 and entrydate between #{begin} and #{end}
+             </if>
+    
+        order by update_time desc
+</select>
+~~~
+测试方法：
+
+~~~java
+@Test
+public void testList(){
+    //性别数据为null、开始时间和结束时间也为null
+    List<Emp> list = empMapper.list("张", null, null, null);
+    for(Emp emp : list){
+        System.out.println(emp);
+    }
+}
+~~~
 
 ### `<if>`
 - `<if>`：用于判断条件是否成立。使用test属性进行条件判断，如果条件为true，则拼接SQL。
-- `<where>`：where 元素只会在子元素有内容的情况下才插入where子句。而且会自动去除子句的开头的 AND 或 OR。
-![Alt text](pictures/java_web入门第5天08.png)
-- `<set>`： 动态地在行首插入 SET 关键字，并会删掉额外的逗号。（用在update语句中） ctr + alt + l 格式化 SQL 语句
+- `<where>`：使用`<where>`标签代替SQL语句中的where关键字，where 元素只会在子元素有内容的情况下才插入where子句。而且会自动去除子句的开头的 AND 或 OR。
+~~~xml
+<select id="list" resultType="com.itheima.pojo.Emp">
+        select * from emp
+        <where>
+             <!-- if做为where标签的子元素 -->
+             <if test="name != null">
+                 and name like concat('%',#{name},'%')
+             </if>
+             <if test="gender != null">
+                 and gender = #{gender}
+             </if>
+             <if test="begin != null and end != null">
+                 and entrydate between #{begin} and #{end}
+             </if>
+        </where>
+        order by update_time desc
+</select>
+~~~
 
-<div align=center><img src="pictures/java_web入门第5天09.png" height="230"></div>
+#### 案例：完善更新员工功能，修改为动态更新员工数据信息
+
+- 动态更新员工信息，如果更新时**传递有值，则更新；如果更新时没有传递值，则不更新**
+- 解决方案：动态SQL
+
+修改Mapper接口：
+
+~~~java
+@Mapper
+public interface EmpMapper {
+    //删除@Update注解编写的SQL语句
+    //update操作的SQL语句编写在Mapper映射文件中
+    public void update(Emp emp);
+}
+~~~
+
+修改Mapper映射文件：
+
+~~~xml
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.itheima.mapper.EmpMapper">
+
+    <!--更新操作-->
+    <update id="update">
+        update emp
+        set
+            <if test="username != null">
+                username=#{username},
+            </if>
+            <if test="name != null">
+                name=#{name},
+            </if>
+            <if test="gender != null">
+                gender=#{gender},
+            </if>
+            <if test="image != null">
+                image=#{image},
+            </if>
+            <if test="job != null">
+                job=#{job},
+            </if>
+            <if test="entrydate != null">
+                entrydate=#{entrydate},
+            </if>
+            <if test="deptId != null">
+                dept_id=#{deptId},
+            </if>
+            <if test="updateTime != null">
+                update_time=#{updateTime}
+            </if>
+        where id=#{id}
+    </update>
+
+</mapper>
+~~~
+测试方法：
+
+~~~java
+@Test
+public void testUpdate2(){
+        //要修改的员工信息
+        Emp emp = new Emp();
+        emp.setId(20);
+        emp.setUsername("Tom111");
+        emp.setName("汤姆111");
+
+        emp.setUpdateTime(LocalDateTime.now());
+
+        //调用方法，修改员工数据
+        empMapper.update(emp);
+}
+~~~
+
+> 执行的SQL语句：
+![[Pasted image 20241231160754.png]]
+
+再次修改测试方法，观察SQL语句执行情况：
+
+~~~java
+@Test
+public void testUpdate2(){
+        //要修改的员工信息
+        Emp emp = new Emp();
+        emp.setId(20);
+        emp.setUsername("Tom222");
+      
+        //调用方法，修改员工数据
+        empMapper.update(emp);
+}
+~~~
+
+> 执行的SQL语句：
+![[Pasted image 20241231160931.png]]
+
+- `<set>`： 动态地在行首插入sql的 SET 关键字，并会*删掉额外的逗号*。（用在update语句中） ctr + alt + l 格式化 SQL 语句
+
+![[pictures/java_web入门第5天09.png]]
 
 ### `<foreach>`
+案例：员工删除功能（既支持删除单条记录，又支持批量删除）
+![[Pasted image 20241231161200.png]]
+
 - SQL 语法： `delete from emp where id in (1,2,3);`
 - 接口方法：
     ```java
@@ -811,19 +993,47 @@ public void insert(Emp emp);
     </delete>
     ```
 - 属性
-    - collection：集合名称
+    - collection：集合名称，和接口方法中的参数名一致
     - item：集合遍历出来的元素/项
-    - separator：每一次遍历使用的分隔符
+    - separator：每一次遍历使用的分隔符，拼接时使用的分隔符
     - open：遍历开始前拼接的片段
     - close：遍历结束后拼接的片段
 ### `<sql><include>`
-- `<sql>`：定义可重用的 SQL 片段。
-- `<include>`：通过属性 refid，指定包含的 sql 片段。
+我们可以对重复的代码片段进行抽取，将其通过`<sql>`标签封装到一个SQL片段，然后再通过`<include>`标签进行引用。
+
+- `<sql>`：定义可重用的SQL片段
+- `<include>`：通过属性refid，指定包含的SQL片段
 ![Alt text](pictures/java_web入门第5天10.png)
 
 
 
+SQL片段： 抽取重复的代码
 
+```xml
+<sql id="commonSelect">
+ 	select id, username, password, name, gender, image, job, entrydate, dept_id, create_time, update_time from emp
+</sql>
+```
+
+然后通过`<include>` 标签在原来抽取的地方进行引用。操作如下：
+
+```xml
+<select id="list" resultType="com.itheima.pojo.Emp">
+    <include refid="commonSelect"/>
+    <where>
+        <if test="name != null">
+            name like concat('%',#{name},'%')
+        </if>
+        <if test="gender != null">
+            and gender = #{gender}
+        </if>
+        <if test="begin != null and end != null">
+            and entrydate between #{begin} and #{end}
+        </if>
+    </where>
+    order by update_time desc
+</select>
+```
 
 
 
